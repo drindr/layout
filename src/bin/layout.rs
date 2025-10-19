@@ -8,6 +8,7 @@ extern crate log;
 use clap::{Arg, ArgAction, Command};
 use gv::parser::DotParser;
 use gv::GraphBuilder;
+use layout::backends::ascii_art::ASCIIWriter;
 use layout::backends::svg::SVGWriter;
 use layout::core::utils::save_to_file;
 use layout::gv;
@@ -17,7 +18,8 @@ use std::fs;
 struct CLIOptions {
     disable_opt: bool,
     disable_layout: bool,
-    output_path: String,
+    ascii_output_path: String,
+    svg_output_path: String,
     debug_mode: bool,
 }
 
@@ -26,13 +28,33 @@ impl CLIOptions {
         Self {
             disable_opt: false,
             disable_layout: false,
-            output_path: String::new(),
+            ascii_output_path: String::new(),
+            svg_output_path: String::new(),
             debug_mode: false,
         }
     }
 }
 
-fn generate_svg(graph: &mut VisualGraph, options: CLIOptions) {
+fn generate_ascii_art(graph: &mut VisualGraph, options: &CLIOptions) {
+    let mut ascii = ASCIIWriter::new();
+    graph.do_it(
+        options.debug_mode,
+        options.disable_opt,
+        options.disable_layout,
+        &mut ascii,
+    );
+    let content = ascii.finalize();
+
+    let res = save_to_file(&options.ascii_output_path, &content);
+    if let Result::Err(err) = res {
+        log::error!("Could not write the file {}", options.ascii_output_path);
+        log::error!("Error {}", err);
+        return;
+    }
+    log::info!("Wrote {}", options.ascii_output_path);
+}
+
+fn generate_svg(graph: &mut VisualGraph, options: &CLIOptions) {
     let mut svg = SVGWriter::new();
     graph.do_it(
         options.debug_mode,
@@ -42,13 +64,13 @@ fn generate_svg(graph: &mut VisualGraph, options: CLIOptions) {
     );
     let content = svg.finalize();
 
-    let res = save_to_file(&options.output_path, &content);
+    let res = save_to_file(&options.svg_output_path, &content);
     if let Result::Err(err) = res {
-        log::error!("Could not write the file {}", options.output_path);
+        log::error!("Could not write the file {}", options.svg_output_path);
         log::error!("Error {}", err);
         return;
     }
-    log::info!("Wrote {}", options.output_path);
+    log::info!("Wrote {}", options.svg_output_path);
 }
 
 fn main() {
@@ -104,10 +126,14 @@ fn main() {
     cli.debug_mode = matches.get_flag("d");
     cli.disable_opt = matches.get_flag("no-optz");
     cli.disable_layout = matches.get_flag("no-layout");
-    cli.output_path = matches
-        .get_one::<String>("output")
+    cli.svg_output_path = matches
+        .get_one::<String>("svg")
         .cloned()
         .unwrap_or_else(|| String::from("/tmp/out.svg"));
+    cli.ascii_output_path = matches
+        .get_one::<String>("ascii")
+        .cloned()
+        .unwrap_or_else(|| String::from("/tmp/out.txt"));
 
     let input_path = matches.get_one::<String>("INPUT").unwrap();
     let contents = fs::read_to_string(input_path).expect("Can't open the file");
@@ -128,7 +154,8 @@ fn main() {
             let mut gb = GraphBuilder::new();
             gb.visit_graph(&g);
             let mut vg = gb.get();
-            generate_svg(&mut vg, cli);
+            generate_svg(&mut vg, &cli);
+            generate_ascii_art(&mut vg, &cli);
         }
     }
 }
