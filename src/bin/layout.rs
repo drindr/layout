@@ -18,8 +18,8 @@ use std::fs;
 struct CLIOptions {
     disable_opt: bool,
     disable_layout: bool,
-    ascii_output_path: String,
-    svg_output_path: String,
+    ascii_output_path: Option<String>,
+    svg_output_path: Option<String>,
     debug_mode: bool,
 }
 
@@ -28,15 +28,15 @@ impl CLIOptions {
         Self {
             disable_opt: false,
             disable_layout: false,
-            ascii_output_path: String::new(),
-            svg_output_path: String::new(),
+            ascii_output_path: None,
+            svg_output_path: None,
             debug_mode: false,
         }
     }
 }
 
 fn generate_ascii_art(graph: &mut VisualGraph, options: &CLIOptions) {
-    let mut ascii = ASCIIWriter::new();
+    let mut ascii = ASCIIWriter::new_with_terminal_setting(true);
     graph.do_it(
         options.debug_mode,
         options.disable_opt,
@@ -45,13 +45,14 @@ fn generate_ascii_art(graph: &mut VisualGraph, options: &CLIOptions) {
     );
     let content = ascii.finalize();
 
-    let res = save_to_file(&options.ascii_output_path, &content);
+    let pa = options.ascii_output_path.as_ref().unwrap();
+    let res = save_to_file(pa, &content);
     if let Result::Err(err) = res {
-        log::error!("Could not write the file {}", options.ascii_output_path);
+        log::error!("Could not write the file {}", pa);
         log::error!("Error {}", err);
         return;
     }
-    log::info!("Wrote {}", options.ascii_output_path);
+    log::info!("Wrote {}", pa);
 }
 
 fn generate_svg(graph: &mut VisualGraph, options: &CLIOptions) {
@@ -64,13 +65,14 @@ fn generate_svg(graph: &mut VisualGraph, options: &CLIOptions) {
     );
     let content = svg.finalize();
 
-    let res = save_to_file(&options.svg_output_path, &content);
+    let pa = options.svg_output_path.as_ref().unwrap();
+    let res = save_to_file(pa, &content);
     if let Result::Err(err) = res {
-        log::error!("Could not write the file {}", options.svg_output_path);
+        log::error!("Could not write the file {}", pa);
         log::error!("Error {}", err);
         return;
     }
-    log::info!("Wrote {}", options.svg_output_path);
+    log::info!("Wrote {}", pa);
 }
 
 fn main() {
@@ -103,9 +105,15 @@ fn main() {
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("output")
-                .short('o')
-                .long("output")
+            Arg::new("svg")
+                .long("svg")
+                .value_name("FILE")
+                .help("Path of the output file")
+                .num_args(1),
+        )
+        .arg(
+            Arg::new("ascii")
+                .long("ascii")
                 .value_name("FILE")
                 .help("Path of the output file")
                 .num_args(1),
@@ -126,15 +134,8 @@ fn main() {
     cli.debug_mode = matches.get_flag("d");
     cli.disable_opt = matches.get_flag("no-optz");
     cli.disable_layout = matches.get_flag("no-layout");
-    cli.svg_output_path = matches
-        .get_one::<String>("svg")
-        .cloned()
-        .unwrap_or_else(|| String::from("/tmp/out.svg"));
-    cli.ascii_output_path = matches
-        .get_one::<String>("ascii")
-        .cloned()
-        .unwrap_or_else(|| String::from("/tmp/out.txt"));
-
+    cli.svg_output_path = matches.get_one::<String>("svg").cloned();
+    cli.ascii_output_path = matches.get_one::<String>("ascii").cloned();
     let input_path = matches.get_one::<String>("INPUT").unwrap();
     let contents = fs::read_to_string(input_path).expect("Can't open the file");
     let mut parser = DotParser::new(&contents);
@@ -154,8 +155,12 @@ fn main() {
             let mut gb = GraphBuilder::new();
             gb.visit_graph(&g);
             let mut vg = gb.get();
-            generate_svg(&mut vg, &cli);
-            generate_ascii_art(&mut vg, &cli);
+            if cli.svg_output_path.is_some() {
+                generate_svg(&mut vg, &cli);
+            }
+            if cli.ascii_output_path.is_some() {
+                generate_ascii_art(&mut vg, &cli);
+            }
         }
     }
 }
